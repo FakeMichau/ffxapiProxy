@@ -1,9 +1,14 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
-#include "pch.h"
 #include "log.h"
-#include "ffx_api.h"
-#include "ffx_upscale.h"
-#include "dx12/ffx_api_dx12.h"
+#include "../include/ffx_api/ffx_api.h"
+#include "../include/ffx_api/ffx_upscale.h"
+#include <dxgi.h>
+#if defined __MINGW64__ || defined __MINGW32__
+#include "../include/d3d12.h"
+#else
+#include <d3d12.h>
+#endif
+#include "../include/ffx_api/dx12/ffx_api_dx12.h"
 
 static HMODULE _amdDll = nullptr;
 static PfnFfxCreateContext _createContext = nullptr;
@@ -181,7 +186,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 
             prepareLogging("fsr31proxy.log");
 
-            _amdDll = LoadLibrary(L"amd_fidelityfx_dx12.o.dll");
+            _amdDll = LoadLibrary("amd_fidelityfx_dx12.o.dll");
 
             if (_amdDll != nullptr)
             {
