@@ -1,14 +1,14 @@
 // dllmain.cpp : Defines the entry point for the DLL application.
 #include "log.h"
-#include "../include/ffx_api/ffx_api.h"
-#include "../include/ffx_api/ffx_upscale.h"
+#include "ffx_api/ffx_api.h"
+#include "ffx_api/ffx_upscale.h"
 #include <dxgi.h>
 #if defined __MINGW64__ || defined __MINGW32__
-#include "../include/d3d12.h"
+#include "d3d12.h"
 #else
 #include <d3d12.h>
 #endif
-#include "../include/ffx_api/dx12/ffx_api_dx12.h"
+#include "ffx_api/dx12/ffx_api_dx12.h"
 
 static HMODULE _amdDll = nullptr;
 static PfnFfxCreateContext _createContext = nullptr;

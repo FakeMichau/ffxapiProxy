@@ -9,6 +9,8 @@ cpp = meson.get_compiler('cpp')
 
 lib_dxgi = cpp.find_library('dxgi')
 
+incdir = include_directories('include')
+
 link_args = [
     '-static',
     '-static-libgcc',
