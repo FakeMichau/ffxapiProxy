@@ -135,6 +135,7 @@ float getRatioFromPreset(FfxFsr3UpscalerQualityMode qualityMode)
 FFX_API_ENTRY ffxReturnCode_t ffxQuery(ffxContext *context, ffxQueryDescHeader *header)
 {
     log("ffxQuery");
+    ffxReturnCode_t result{};
 
     switch(header->type) {
     case FFX_API_QUERY_DESC_TYPE_UPSCALE_GETRENDERRESOLUTIONFROMQUALITYMODE:
@@ -150,6 +151,7 @@ FFX_API_ENTRY ffxReturnCode_t ffxQuery(ffxContext *context, ffxQueryDescHeader *
             *desc->pOutRenderHeight = scaledDisplayHeight;
         log("ffxQuery header->type: FFX_API_QUERY_DESC_TYPE_UPSCALE_GETRENDERRESOLUTIONFROMQUALITYMODE");
         log("Output Resolution: {}x{}", *desc->pOutRenderWidth, *desc->pOutRenderHeight);
+        result = FFX_API_RETURN_OK;
         break;
     }
     case FFX_API_QUERY_DESC_TYPE_UPSCALE_GETUPSCALERATIOFROMQUALITYMODE:
@@ -159,14 +161,14 @@ FFX_API_ENTRY ffxReturnCode_t ffxQuery(ffxContext *context, ffxQueryDescHeader *
         if (desc->pOutUpscaleRatio != nullptr)
             *desc->pOutUpscaleRatio = static_cast<FfxFsr3UpscalerQualityMode>(desc->qualityMode);
         log("ffxQuery header->type: FFX_API_QUERY_DESC_TYPE_UPSCALE_GETUPSCALERATIOFROMQUALITYMODE");
+        result = FFX_API_RETURN_OK;
         break;
     }
+    default:
+        result = _query(context, header);
     }
 
-    auto result = _query(context, header);
-
     log("ffxQuery result: {}", result);
-
     return result;
 }
 
