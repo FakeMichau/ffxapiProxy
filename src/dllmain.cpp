@@ -62,7 +62,7 @@ FFX_API_ENTRY ffxReturnCode_t ffxCreateContext(ffxContext *context, ffxCreateCon
     ffxOverrideVersion override{};
     override.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
     override.versionId = config.versionIds[config.upscalerIndex];
-    log("FFX_API_DESC_TYPE_OVERRIDE_VERSION: {}", override.versionId);
+    log("FFX_API_DESC_TYPE_OVERRIDE_VERSION: {}", config.versionNames[config.upscalerIndex]);
     override.header.pNext = desc->pNext;
     desc->pNext = &override.header;
 
