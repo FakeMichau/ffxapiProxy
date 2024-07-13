@@ -25,15 +25,18 @@ void log(const std::string& log) {
     *logStream << "[" << getCurrentTimeFormatted() << "] " << log << std::endl;
 }
 
-void prepareLogging(std::string fileName) {
-    fileStream.open(fileName, std::ios_base::out | std::ios_base::app);
-    if (fileStream.is_open()) {
-        logStream = &fileStream;
-        return;
+void prepareLogging(std::optional<std::string> fileName) {
+    if (fileName.has_value()) {
+        fileStream.open(fileName.value(), std::ios_base::out | std::ios_base::app);
+        if (fileStream.is_open()) {
+            logStream = &fileStream;
+            return;
+        }
+        else {
+            std::cerr << "Failed to open log file: " << fileName.value() << std::endl;
+        }
     }
-    else {
-        std::cerr << "Failed to open log file: " << fileName << std::endl;
-    }
+    // logStream = &std::cout;
 }
 
 void closeLogging() {

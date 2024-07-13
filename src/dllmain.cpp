@@ -160,12 +160,17 @@ FFX_API_ENTRY ffxReturnCode_t ffxDispatch(ffxContext *context, const ffxDispatch
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
+    auto logEnv = std::getenv("FFXPROXY_LOG");
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hModule);
 
-        prepareLogging("fsr31proxy.log");
+        if (logEnv && *logEnv == '1')
+            prepareLogging("ffx_proxy.log");
+        else
+            prepareLogging(std::nullopt);
+        log("--------------");
 
         _amdDll = LoadLibrary("amd_fidelityfx_dx12.o.dll");
 

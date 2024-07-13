@@ -19,5 +19,5 @@ template<typename... Args>
 void log(const std::string& formatStr, Args&&... args) {
     log(std::vformat(formatStr, std::make_format_args(to_string(std::forward<Args>(args))...)));
 }
-void prepareLogging(std::string fileName);
+void prepareLogging(std::optional<std::string> fileName);
 void closeLogging();
