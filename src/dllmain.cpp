@@ -1,14 +1,17 @@
-// dllmain.cpp : Defines the entry point for the DLL application.
 #include "log.h"
-#include "ffx_api/ffx_api.h"
-#include "ffx_api/ffx_upscale.h"
 #include <dxgi.h>
-#if defined __MINGW64__ || defined __MINGW32__
-#include "d3d12.h"
-#else
 #include <d3d12.h>
-#endif
-#include "ffx_api/dx12/ffx_api_dx12.h"
+#include <ffx_api/ffx_api.hpp>
+#include <ffx_api/ffx_upscale.h>
+#include <ffx_api/dx12/ffx_api_dx12.h>
+
+struct Config
+{
+    std::vector<const char *> versionNames;
+    std::vector<uint64_t> versionIds;
+    u_int upscalerIndex = 0; // assuming 1 == 2.3.2
+    bool debugView = true;
+} config;
 
 static HMODULE _amdDll = nullptr;
 static PfnFfxCreateContext _createContext = nullptr;
@@ -17,198 +20,175 @@ static PfnFfxConfigure _configure = nullptr;
 static PfnFfxQuery _query = nullptr;
 static PfnFfxDispatch _dispatch = nullptr;
 
-FFX_API_ENTRY ffxReturnCode_t ffxCreateContext(ffxContext* context, ffxCreateContextDescHeader* desc, const ffxAllocationCallbacks* memCb)
+FFX_API_ENTRY ffxReturnCode_t ffxCreateContext(ffxContext *context, ffxCreateContextDescHeader *desc, const ffxAllocationCallbacks *memCb)
 {
     if (_createContext == nullptr)
         return FFX_API_RETURN_ERROR;
 
     log("ffxCreateContext");
 
-    ffxCreateContextDescHeader* header = desc;
-
-    while (header != nullptr)
+    for (const auto *it = desc->pNext; it; it = it->pNext)
     {
-        if (header->type == FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE)
+        switch (it->type)
         {
+        case FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE:
             log("ffxCreateContext header->type: FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE");
-        }
-        else if (header->type == FFX_API_DESC_TYPE_OVERRIDE_VERSION)
-        {
+            break;
+        case FFX_API_DESC_TYPE_OVERRIDE_VERSION:
             log("ffxCreateContext header->type: FFX_API_DESC_TYPE_OVERRIDE_VERSION");
-        }
-        else if (header->type == FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12)
+            break;
+        case FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12:
         {
             log("ffxCreateContext header->type: FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12");
-        }
-        else
-        {
-            log("ffxCreateContext header->type: " + std::to_string((uint64_t)header->type));
-        }
+            ffx::QueryDescGetVersions versionQuery{};
+            versionQuery.createDescType = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
+            versionQuery.device = reinterpret_cast<const ffxCreateBackendDX12Desc *>(it)->device;
+            uint64_t versionCount = 0;
+            versionQuery.outputCount = &versionCount;
+            _query(nullptr, &versionQuery.header);
 
-        header = header->pNext;
+            config.versionIds.resize(versionCount);
+            config.versionNames.resize(versionCount);
+            versionQuery.versionIds = config.versionIds.data();
+            versionQuery.versionNames = config.versionNames.data();
+            _query(nullptr, &versionQuery.header);
+            break;
+        }
+        default:
+            log("ffxCreateContext header->type: {}", it->type);
+        }
     }
+
+    ffxOverrideVersion override{};
+    override.header.type = FFX_API_DESC_TYPE_OVERRIDE_VERSION;
+    override.versionId = config.versionIds[config.upscalerIndex];
+    log("FFX_API_DESC_TYPE_OVERRIDE_VERSION: {}", override.versionId);
+    override.header.pNext = desc->pNext;
+    desc->pNext = &override.header;
 
     auto result = _createContext(context, desc, memCb);
 
-    log("ffxCreateContext result: " + std::to_string((uint32_t)result));
+    log("ffxCreateContext result: {}", result);
 
     return result;
 }
 
-FFX_API_ENTRY ffxReturnCode_t ffxDestroyContext(ffxContext* context, const ffxAllocationCallbacks* memCb)
+FFX_API_ENTRY ffxReturnCode_t ffxDestroyContext(ffxContext *context, const ffxAllocationCallbacks *memCb)
 {
     log("ffxDestroyContext");
 
     auto result = _destroyContext(context, memCb);
 
-    log("ffxDestroyContext result: " + std::to_string((uint32_t)result));
+    log("ffxDestroyContext result: {}", result);
 
     return result;
 }
 
-FFX_API_ENTRY ffxReturnCode_t ffxConfigure(ffxContext* context, const ffxConfigureDescHeader* desc)
+FFX_API_ENTRY ffxReturnCode_t ffxConfigure(ffxContext *context, const ffxConfigureDescHeader *desc)
 {
     log("ffxConfigure");
 
     auto result = _configure(context, desc);
 
-    log("ffxConfigure result: " + std::to_string((uint32_t)result));
+    log("ffxConfigure result: {}", result);
 
     return result;
 }
 
-FFX_API_ENTRY ffxReturnCode_t ffxQuery(ffxContext* context, ffxQueryDescHeader* desc)
+FFX_API_ENTRY ffxReturnCode_t ffxQuery(ffxContext *context, ffxQueryDescHeader *desc)
 {
     log("ffxQuery");
 
     auto result = _query(context, desc);
 
-    log("ffxQuery result: " + std::to_string((uint32_t)result));
+    log("ffxQuery result: {}", result);
 
     return result;
 }
 
-FFX_API_ENTRY ffxReturnCode_t ffxDispatch(ffxContext* context, const ffxDispatchDescHeader* desc)
+FFX_API_ENTRY ffxReturnCode_t ffxDispatch(ffxContext *context, const ffxDispatchDescHeader *desc)
 {
     log("ffxDispatch");
 
-    if (desc->type == FFX_API_DISPATCH_DESC_TYPE_UPSCALE)
+    switch (desc->type)
     {
+    case FFX_API_DISPATCH_DESC_TYPE_UPSCALE:
+    {
+        auto ud = (ffxDispatchDescUpscale *)desc;
         log("ffxDispatch desc->type: FFX_API_DISPATCH_DESC_TYPE_UPSCALE");
-        auto ud = (ffxDispatchDescUpscale*)desc;
+        log("ffxDispatch ud->cameraFar: {}", ud->cameraFar);
+        log("ffxDispatch ud->cameraFovAngleVertical: {}", ud->cameraFovAngleVertical);
+        log("ffxDispatch ud->cameraNear: {}", ud->cameraNear);
+        log("ffxDispatch ud->color: {}null", ud->color.resource ? "not ": "");
+        log("ffxDispatch ud->commandList: {}null", ud->commandList ? "not ": "");
+        log("ffxDispatch ud->depth: {}null", ud->depth.resource ? "not ": "");
+        log("ffxDispatch ud->enableSharpening: {}", ud->enableSharpening);
+        log("ffxDispatch ud->exposure: {}null", ud->exposure.resource ? "not ": "");
+        log("ffxDispatch ud->flags: {}", ud->flags);
+        log("ffxDispatch ud->frameTimeDelta: {}", ud->frameTimeDelta);
+        log("ffxDispatch ud->jitterOffset: ({}, {})", ud->jitterOffset.x, ud->jitterOffset.y);
+        log("ffxDispatch ud->motionVectors: {}null", ud->motionVectors.resource ? "not ": "");
+        log("ffxDispatch ud->motionVectorScale: ({}, {})", ud->motionVectorScale.x, ud->motionVectorScale.y);
+        log("ffxDispatch ud->output: {}null", ud->output.resource ? "not ": "");
+        log("ffxDispatch ud->preExposure: {}", ud->preExposure);
+        log("ffxDispatch ud->reactive: {}null", ud->reactive.resource ? "not ": "");
+        log("ffxDispatch ud->renderSize: ({}, {})", ud->renderSize.width, ud->renderSize.height);
+        log("ffxDispatch ud->reset: {}", ud->reset);
+        log("ffxDispatch ud->sharpness: {}", ud->sharpness);
+        log("ffxDispatch ud->transparencyAndComposition: {}null", ud->transparencyAndComposition.resource ? "not ": "");
+        log("ffxDispatch ud->upscaleSize: ({}, {})", ud->upscaleSize.width, ud->upscaleSize.height);
+        log("ffxDispatch ud->viewSpaceToMetersFactor: {}", ud->viewSpaceToMetersFactor);
 
-        log("ffxDispatch ud->cameraFar: " + std::to_string(ud->cameraFar));
-        log("ffxDispatch ud->cameraFovAngleVertical: " + std::to_string(ud->cameraFovAngleVertical));
-        log("ffxDispatch ud->cameraNear: " + std::to_string(ud->cameraNear));
+        if (config.debugView)
+            ud->flags = FFX_UPSCALE_FLAG_DRAW_DEBUG_VIEW;
 
-        if (ud->color.resource != nullptr)
-            log("ffxDispatch ud->color: not null");
-        else
-            log("ffxDispatch ud->color: null");
-
-        if (ud->commandList != nullptr)
-            log("ffxDispatch ud->commandList: not null");
-        else
-            log("ffxDispatch ud->commandList: null");
-
-        if (ud->depth.resource != nullptr)
-            log("ffxDispatch ud->depth: not null");
-        else
-            log("ffxDispatch ud->depth: null");
-
-        if (ud->enableSharpening)
-            log("ffxDispatch ud->enableSharpening: true");
-        else
-            log("ffxDispatch ud->enableSharpening: false");
-
-        if (ud->exposure.resource != nullptr)
-            log("ffxDispatch ud->exposure: not null");
-        else
-            log("ffxDispatch ud->exposure: null");
-
-        log("ffxDispatch ud->flags: " + std::to_string(ud->flags));
-        log("ffxDispatch ud->frameTimeDelta: " + std::to_string(ud->frameTimeDelta));
-        log("ffxDispatch ud->jitterOffset: {" + std::to_string(ud->jitterOffset.x) + ", " + std::to_string(ud->jitterOffset.y) + "}");
-
-        if (ud->motionVectors.resource != nullptr)
-            log("ffxDispatch ud->motionVectors: not null");
-        else
-            log("ffxDispatch ud->motionVectors: null");
-
-        log("ffxDispatch ud->motionVectorScale: {" + std::to_string(ud->motionVectorScale.x) + ", " + std::to_string(ud->motionVectorScale.y) + "}");
-
-        if ((ud->output.resource != nullptr))
-            log("ffxDispatch ud->output: not null");
-        else
-            log("ffxDispatch ud->output: null");
-
-        log("ffxDispatch ud->preExposure: " + std::to_string(ud->preExposure));
-
-        if ((ud->reactive.resource != nullptr))
-            log("ffxDispatch ud->reactive: not null");
-        else
-            log("ffxDispatch ud->reactive: null");
-
-        log("ffxDispatch ud->renderSize: {" + std::to_string(ud->renderSize.width) + ", " + std::to_string(ud->renderSize.height) + "}");
-        log("ffxDispatch ud->reset: " + std::to_string(ud->reset));
-        log("ffxDispatch ud->sharpness: " + std::to_string(ud->sharpness));
-
-        if (ud->transparencyAndComposition.resource != nullptr)
-            log("ffxDispatch ud->transparencyAndComposition: not null");
-        else
-            log("ffxDispatch ud->transparencyAndComposition: null");
-
-        log("ffxDispatch ud->upscaleSize: {" + std::to_string(ud->upscaleSize.width) + ", " + std::to_string(ud->upscaleSize.height) + "}");
-        log("ffxDispatch ud->viewSpaceToMetersFactor: " + std::to_string(ud->viewSpaceToMetersFactor));
+        break;
     }
-    else if (desc->type == FFX_API_DISPATCH_DESC_TYPE_UPSCALE_GENERATEREACTIVEMASK)
-    {
+    case FFX_API_DISPATCH_DESC_TYPE_UPSCALE_GENERATEREACTIVEMASK:
         log("ffxDispatch desc->type: FFX_API_DISPATCH_DESC_TYPE_UPSCALE_GENERATEREACTIVEMASK");
-    }
-    else
-    {
-        log("ffxDispatch desc->type: " + std::to_string((uint64_t)desc->type));
+        break;
+    default:
+        log("ffxDispatch desc->type: {}", desc->type);
     }
 
     auto result = _dispatch(context, desc);
 
-    log("ffxDispatch result: " + std::to_string((uint32_t)result));
+    log("ffxDispatch result: {}", result);
 
     return result;
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
     switch (ul_reason_for_call)
     {
-        case DLL_PROCESS_ATTACH:
-            DisableThreadLibraryCalls(hModule);
+    case DLL_PROCESS_ATTACH:
+        DisableThreadLibraryCalls(hModule);
 
-            prepareLogging("fsr31proxy.log");
+        prepareLogging("fsr31proxy.log");
 
-            _amdDll = LoadLibrary("amd_fidelityfx_dx12.o.dll");
+        _amdDll = LoadLibrary("amd_fidelityfx_dx12.o.dll");
 
-            if (_amdDll != nullptr)
-            {
-                _createContext = (PfnFfxCreateContext)GetProcAddress(_amdDll, "ffxCreateContext");
-                _destroyContext = (PfnFfxDestroyContext)GetProcAddress(_amdDll, "ffxDestroyContext");
-                _configure = (PfnFfxConfigure)GetProcAddress(_amdDll, "ffxConfigure");
-                _query = (PfnFfxQuery)GetProcAddress(_amdDll, "ffxQuery");
-                _dispatch = (PfnFfxDispatch)GetProcAddress(_amdDll, "ffxDispatch");
-            }
+        if (_amdDll != nullptr)
+        {
+            _createContext = (PfnFfxCreateContext)GetProcAddress(_amdDll, "ffxCreateContext");
+            _destroyContext = (PfnFfxDestroyContext)GetProcAddress(_amdDll, "ffxDestroyContext");
+            _configure = (PfnFfxConfigure)GetProcAddress(_amdDll, "ffxConfigure");
+            _query = (PfnFfxQuery)GetProcAddress(_amdDll, "ffxQuery");
+            _dispatch = (PfnFfxDispatch)GetProcAddress(_amdDll, "ffxDispatch");
+        }
 
-            break;
+        break;
 
-        case DLL_THREAD_ATTACH:
-        case DLL_THREAD_DETACH:
-            break;
+    case DLL_THREAD_ATTACH:
+    case DLL_THREAD_DETACH:
+        break;
 
-        case DLL_PROCESS_DETACH:
-            closeLogging();
-            FreeLibrary(_amdDll);
-            break;
+    case DLL_PROCESS_DETACH:
+        closeLogging();
+        FreeLibrary(_amdDll);
+        break;
     }
 
     return TRUE;
 }
-
